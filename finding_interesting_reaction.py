@@ -116,6 +116,11 @@ for i in exp_key:
 
 m1_skrc7.optimize()
 m1_vhl7.optimize()
+
+# Save the model
+cobra.io.write_sbml_model(m1_skrc7, "model_SKRC7.xml")
+cobra.io.write_sbml_model(m1_vhl7, "model_VHL7.xml")
+
 ###############################################################################
 '''                    FINDING INTERESTING REACTIONS
 MODEL 1'''
@@ -133,7 +138,7 @@ m1_s_newlist = np.array(flux1_skrc7)
 
 m1_v_newlist = np.array(flux1_vhl7)
 
-
+# transform to a unit vector
 m1_s_newlist = m1_s_newlist/np.linalg.norm(m1_s_newlist) 
           
 m1_v_newlist = m1_v_newlist/np.linalg.norm(m1_v_newlist) 
