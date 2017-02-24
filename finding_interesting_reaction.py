@@ -99,7 +99,7 @@ for i in reaction_list:
             m1_vhl7.reactions.get_by_id(i).upper_bound = mean2
             m1_vhl7.reactions.get_by_id(i).lower_bound = -mean2
         elif '-->' in model_orig.reactions.get_by_id(i).reaction:
-            m1_skrc7.reactions.get_by_id(i).upper_bound = mean2
+            m1_skrc7.reactions.get_by_id(i).upper_bound = mean1
             m1_vhl7.reactions.get_by_id(i).upper_bound = mean2
 
 
