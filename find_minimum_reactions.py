@@ -2,7 +2,7 @@ import cobra
 import numpy as np
 import gurobipy as gu
 import scipy.stats as sts 
-
+import math
 
 
 model = cobra.io.read_sbml_model("/home/danielg/PhD/Students/Veerle/iRenalCancer1410.xml")
@@ -99,17 +99,16 @@ def build_gurobi_model(reaction_dict, metabolite_dict, objective_name):
     m.optimize()
     return m
 
-def gapfill_gurobi_model(reaction_dict, metabolite_dict, objective_name, candidate_set_dict, delta):
+def gapfill_gurobi_model(reaction_dict, metabolite_dict, objective_name, delta):
     #define the model
     m= gu.Model('mipl')    
     #define variables
     for i in reaction_dict:
         if i==objective_name:
             b=m.addVar(vtype= gu.GRB.CONTINUOUS, name = i, obj=delta, ub = reaction_dict[i][1], lb = reaction_dict[i][0])
-        elif i in candidate_set_dict:
+        else: 
             b=m.addVar(vtype= gu.GRB.CONTINUOUS, name = i, obj=-1, ub = reaction_dict[i][1], lb = reaction_dict[i][0])
-        else:
-            b=m.addVar(vtype= gu.GRB.CONTINUOUS, name = i, obj=0, ub = reaction_dict[i][1], lb = reaction_dict[i][0])
+        
     m.update()
     #set the objective function
     var = m.getVars()
@@ -117,11 +116,9 @@ def gapfill_gurobi_model(reaction_dict, metabolite_dict, objective_name, candida
     for i in var:
         if i.VarName==objective_name:
             coef.append(delta)
-        elif i.VarName in candidate_set_dict:
-            coef.append(-1)
         else:
-            coef.append(0)
-
+            coef.append(-1)
+        
     m.setObjective(gu.LinExpr(coef, var), gu.GRB.MAXIMIZE)
     m.update()    
     #set the stoichiometric constraints for metabolites    
@@ -135,35 +132,89 @@ def gapfill_gurobi_model(reaction_dict, metabolite_dict, objective_name, candida
     return m
 
     
-def friday_algorithm(kbase_dict, M, objective_name, delta):
+def friday_algorithm(M, objective_name, delta):
     d= delta
-    kbase = {i:(kbase_dict[i][0],(0,1)) for i in kbase_dict}
+    kbase = {i:(M[i][0],(0,1)) for i in M}
     current_sum = 0
     previous_sum = -1
+    r, m = build_stoichiometric_dict(kbase)
+    modelx = gapfill_gurobi_model(r, m, objective_name, kbase, d)
+    sol = modelx.ObjVal
+    if sol<0.000001:
+        return 'no previous flux--algorithm failled'
     while abs(current_sum - previous_sum)>.0001:
         previous_sum = current_sum
         r, m = build_stoichiometric_dict(kbase)
-        modelx = gapfill_gurobi_model(r, m, objective_name, M, d)
-        
-            
-               
-        if modelx.getVarByName(objective_name).X<0.1:
-            pass
-        else:
-            print len(kbase), '\n\n'
-            z = [modelx.getVarByName(i).X for i in M]
-            d = 2*sum(z)
-            
-            current_sum = sum(z)
-            k = M.keys() 
-                
+        modelx = gapfill_gurobi_model(r, m, objective_name, kbase, d)
+        sol = modelx.ObjVal
+        while modelx.ObjVal>(0.1):
+            k = kbase.keys()
+            modely = build_gurobi_model(r, m, objective_name) 
             for i in k:
-                if modelx.getVarByName(i).X==0:
+                if modely.getVarByName(i).X==0:
                     kbase.pop(i,None)
-                    M.pop(i,None)
-            print len(kbase), '\n\n'
+            r, m = build_stoichiometric_dict(kbase)
             
+            #modely = build_gurobi_model(r, m, objective_name)
+            #k = kbase.keys()
+            #for i in k:
+            #    if modely.getVarByName(i).X==0:
+            #        kbase.pop(i,None)
+            #r, m = build_stoichiometric_dict(kbase)
+            d-=0.1
+            print d, '\n\n\n\n\n\n'
+            modelx = gapfill_gurobi_model(r, m, objective_name, kbase, d)
+         
+        
+        
+        
+        
+        z = [modelx.getVarByName(i).X for i in k]
+    
+        
+                
+        print 'size', '\t', len(kbase), '\n\n'
+            
+        
+        #d = 2*sum(z)+1
+            
+        current_sum = sum(z)
+                        
     return kbase
+
+
+
+def tuesday_algorithm(reaction_dict, objective_name):
+    '''
+    Parameters
+    ---------
+    reactions_dict: python-dict
+    output from parse_reaction(model)
+    objective_name: string
+    any reaction for which you would like to determine its context specific
+    neighbours.
+    
+    '''
+    
+    score_dict={i:0 for i in reaction_dict}
+    d = sum([reaction_dict[i][1][1] for i in reaction_dict])
+    r, m = build_stoichiometric_dict(reaction_dict)
+    modelx = gapfill_gurobi_model(r, m, objective_name, d)
+    z = sum([modelx.getVarByName(i).X for i in score_dict])
+    print z,'\n\n\n'
+    for i in score_dict:
+        score_dict[i]+=math.log(modelx.getVarByName(i).X+1) -math.log(z+1)
+    sol = modelx.ObjVal
+    if sol<0.000001:
+        return 'no previous flux--algorithm failled'
+    while modelx.ObjVal>(0.1):
+        d-=0.2*modelx.ObjVal
+        modelx = gapfill_gurobi_model(r, m, objective_name, d)
+        z = sum([modelx.getVarByName(i).X for i in score_dict])
+        for i in score_dict:
+            score_dict[i]+=math.log(modelx.getVarByName(i).X+1) -math.log(z+1)
+              
+    return score_dict
 
 
 def fix_names(l):
@@ -178,7 +229,7 @@ def fix_names(l):
     return list(set(g))
 
 a = parse_reaction(model)
-objective = 'HMR_2771'
+objective = 'CancerBiomass_OF'
 #a.pop(objective, None)
 ac = a.copy()
 ac.pop(objective, None)
@@ -189,39 +240,41 @@ a_r[objective] = a[objective]
 
 a_r[objective] =(a_r[objective][0],(0,1))  
 
-r, m = build_stoichiometric_dict(a_r)
-modelx = gapfill_gurobi_model(r, m, objective, a_r, 1000)
-
-
-c=[]
-for i in a_r:
-    if modelx.getVarByName(i).X!=0:
-        c.append(i)
-
-n=[]
-for i in a_r:
-    if modelx.getVarByName(i).X==0:
-        n.append(i)
+y = tuesday_algorithm(a_r, objective)
 
 model = cobra.io.read_sbml_model("/home/danielg/PhD/Students/Veerle/iRenalCancer1410.xml")
-model.change_objective(model.reactions.HMR_2771)
+#
+model.change_objective(model.reactions.get_by_id(objective))
+#
 model.optimize()
-
-g = fix_names(c)
-
-mc = model.copy()
-
-l =[] 
-
-for i in a_r:
-    if i not in c:
-        l.append(i)
-
-l_f = fix_names(l)
-
-for i in l_f:
-    model.reactions.get_by_id(i).upper_bound=0
-    model.reactions.get_by_id(i).lower_bound=0
-model.optimize()
-
-print model.solution.f
+#
+#
+k = np.array(y.keys())
+#
+#l = fix_names(k)
+#
+v = np.array(y.values())
+#ind = v>-460
+#
+#t = k[ind]
+#
+#l = fix_names(t)
+#
+#for i in model.reactions:
+#    if i.id not in l:
+#        model.reactions.get_by_id(i.id).upper_bound=0
+#        model.reactions.get_by_id(i.id).lower_bound=0
+##
+#model.optimize()
+##
+#s = model.solution.f
+##
+#print 'model_so_far', s
+##
+#for i in l:
+#    mc = model.copy()
+#    mc.reactions.get_by_id(i).upper_bound=0
+#    mc.reactions.get_by_id(i).lower_bound=0
+##
+#    mc.optimize()
+#    print i, 'original: ', '\t', s, '\t', 'new:', '\t', mc.solution.f, '\t', 'diff:', '\t', s-mc.solution.f
