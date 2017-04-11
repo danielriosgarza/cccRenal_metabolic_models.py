@@ -5,7 +5,8 @@ import scipy.stats as sts
 import math
 
 
-model = cobra.io.read_sbml_model("/home/danielg/PhD/Students/Veerle/iRenalCancer1410.xml")
+model1 = cobra.io.read_sbml_model("/home/danielg/PhD/Students/edwin/model_SKRC7.xml")
+model2 = cobra.io.read_sbml_model("/home/danielg/PhD/Students/edwin/model_VHL7.xml")
 
 def parse_reaction(model):
     '''
@@ -228,32 +229,78 @@ def fix_names(l):
             g.append(i)
     return list(set(g))
 
-a = parse_reaction(model)
-objective = 'CancerBiomass_OF'
+a1 = parse_reaction(model1)
+a2 = parse_reaction(model2)
+
+
+objective = 'HMR_4006'
 #a.pop(objective, None)
-ac = a.copy()
-ac.pop(objective, None)
 
-a_r = create_reverse_reactions(ac)
+ac1 = a1.copy()
+ac2 = a2.copy()
 
-a_r[objective] = a[objective]
+ac1.pop(objective, None)
+ac2.pop(objective, None)
 
-a_r[objective] =(a_r[objective][0],(0,1))  
 
-y = tuesday_algorithm(a_r, objective)
+a_r1 = create_reverse_reactions(ac1)
+a_r2 = create_reverse_reactions(ac2)
 
-model = cobra.io.read_sbml_model("/home/danielg/PhD/Students/Veerle/iRenalCancer1410.xml")
+
+a_r1[objective] = a1[objective]
+a_r2[objective] = a2[objective]
+
+
+
+a_r1[objective] =(a_r1[objective][0],(0,1))  
+a_r2[objective] =(a_r2[objective][0],(0,1))
+
+k1 = a_r1.keys()
+k2 = a_r2.keys()
+for i in k1:
+    if i not in a_r2:
+        a_r2[i] = a_r1[i]
+
+
+for i in k2:
+    if i not in a_r1:
+        a_r1[i] = a_r2[i]
 #
-model.change_objective(model.reactions.get_by_id(objective))
+#for i in k2:
+#    if i not in a_r1:
+#        a_r2.pop(i,None)
+
+y1 = tuesday_algorithm(a_r1, objective)
+y2 = tuesday_algorithm(a_r2, objective)
+
+
+x,y,common=[],[],[]
+
+for i in y1:
+    if i in y2:
+        x.append(y1[i])
+        y.append(y2[i])
+        common.append(i)
+
+x,y,common = np.array(x), np.array(y), np.array(common)
+
+from pylab import *
+z =abs(x-y)
+scatter(x,y);scatter(x[z>0.1], y[z>0.1], c='r')
+
+show()
+#model = cobra.io.read_sbml_model("/home/danielg/PhD/Students/Veerle/iRenalCancer1410.xml")
 #
-model.optimize()
+#model.change_objective(model.reactions.get_by_id(objective))
+#
+#model.optimize()
 #
 #
-k = np.array(y.keys())
+#k = np.array(y.keys())
 #
 #l = fix_names(k)
 #
-v = np.array(y.values())
+#v = np.array(y.values())
 #ind = v>-460
 #
 #t = k[ind]
