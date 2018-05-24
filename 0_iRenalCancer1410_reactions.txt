@@ -1,4 +1,4 @@
-cancer_biomass
+cancer_biomass_reaction
 HMR_3905
 HMR_4099
 HMR_4137
